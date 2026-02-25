@@ -75,9 +75,9 @@ func (s *SQLiteStore) UpsertEndpoint(ip, mac, hostname, typ string, seen time.Ti
 		INSERT INTO endpoints(ip, mac, hostname, type, first_seen, last_seen, last_scan_at, up)
 		VALUES(?,?,?,?,?,?,NULL,?)
 		ON CONFLICT(ip) DO UPDATE SET
-		  mac=COALESCE(excluded.mac, endpoints.mac),
-		  hostname=COALESCE(excluded.hostname, endpoints.hostname),
-		  type=COALESCE(excluded.type, endpoints.type),
+		  mac=COALESCE(NULLIF(excluded.mac, ''), endpoints.mac),
+		  hostname=COALESCE(NULLIF(excluded.hostname, ''), endpoints.hostname),
+		  type=COALESCE(NULLIF(excluded.type, ''), endpoints.type),
 		  last_seen=excluded.last_seen,
 		  up=excluded.up
 	`, ip, mac, hostname, typ, seen, seen, boolToInt(up))
@@ -241,7 +241,7 @@ func (s *SQLiteStore) IngestARP(entries []models.ARPEntry, ts time.Time) error {
 			INSERT INTO endpoints(ip, mac, first_seen, last_seen, up)
 			VALUES(?,?,?,?,1)
 			ON CONFLICT(ip) DO UPDATE SET
-			  mac=COALESCE(excluded.mac, endpoints.mac),
+			  mac=COALESCE(NULLIF(excluded.mac, ''), endpoints.mac),
 			  last_seen=?,
 			  up=1
 		`, e.IP, e.MAC, ts, ts, ts); err != nil {
