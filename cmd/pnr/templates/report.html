@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{{ .Title }}</title>
+  <style>
+    body{font-family:Inter,Segoe UI,Roboto,Arial;background:#f7fafc;color:#111;margin:0;padding:24px}
+    .wrap{max-width:1100px;margin:0 auto;background:#fff;padding:20px;border-radius:8px;box-shadow:0 8px 30px rgba(2,6,23,0.08)}
+    h1,h2{margin:8px 0}
+    table{width:100%;border-collapse:collapse;margin:12px 0}
+    th,td{padding:8px;border:1px solid #eee;text-align:left;font-size:13px}
+    th{background:#f1f5f9}
+    .muted{color:#666;font-size:13px}
+    .port-open{color:green;font-weight:600}
+    .port-closed{color:#999}
+    .small{font-size:12px}
+    .summary{display:flex;gap:20px;margin-top:8px}
+    .card{background:#fbfbff;padding:12px;border-radius:6px;border:1px solid #eef2ff}
+    pre{background:#0f172a;color:#f8fafc;padding:8px;border-radius:6px;overflow:auto}
+    .alert{background:#fef3c7;border:2px solid #f59e0b;border-radius:8px;padding:16px;margin:16px 0;color:#92400e}
+    .alert-title{font-weight:700;font-size:15px;margin-bottom:8px;display:flex;align-items:center;gap:8px}
+    .alert-icon{font-size:20px}
+    .alert ul{margin:8px 0;padding-left:20px}
+    .alert li{margin:4px 0}
+    .script-list{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+    .script-tag{background:#fbbf24;color:#78350f;padding:4px 8px;border-radius:4px;font-size:11px;font-family:monospace}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>{{ .Title }}</h1>
+    <div class="muted">Window: {{ .From.Format "2006-01-02 15:04" }} — {{ .To.Format "2006-01-02 15:04" }}</div>
+
+    {{ if .HasSensitiveData }}
+    <div class="alert">
+      <div class="alert-title">
+        <span class="alert-icon">⚠️</span>
+        <span>SECURITY NOTICE: This report contains sensitive network information</span>
+      </div>
+      <div>
+        This report includes NSE (Nmap Scripting Engine) scan results that reveal potentially sensitive information about your network infrastructure:
+      </div>
+      <ul>
+        <li><strong>Service versions</strong> and software details that may have known vulnerabilities</li>
+        <li><strong>SSL certificates</strong> with organization names and domain structures</li>
+        <li><strong>System configurations</strong> and security settings</li>
+        <li><strong>Network topology</strong> and internal naming conventions</li>
+      </ul>
+      <div style="margin-top:12px">
+        <strong>⛔ DO NOT SHARE</strong> this report outside your trusted security team or with unauthorized personnel.
+      </div>
+      <div class="script-list">
+        <strong style="width:100%;font-size:12px">Detected sensitive scripts:</strong>
+        {{ range .SensitiveScripts }}
+          <span class="script-tag">{{ . }}</span>
+        {{ end }}
+      </div>
+    </div>
+    {{ end }}
+
+    <div class="summary">
+      <div class="card"><div class="muted small">Scans</div><div><strong>{{ len .Scans }}</strong></div></div>
+      <div class="card"><div class="muted small">Distinct hosts</div><div><strong>{{ .DistinctHosts }}</strong></div></div>
+      <div class="card"><div class="muted small">Open ports (unique)</div><div><strong>{{ .UniqueOpenPortsCount }}</strong></div></div>
+    </div>
+
+    <h2>Top Open Ports</h2>
+    {{ if .TopPorts }}
+    <table>
+      <thead><tr><th>Port</th><th>Count</th></tr></thead>
+      <tbody>
+      {{ range .TopPorts }}
+        <tr><td>{{ .Port }}</td><td>{{ .Count }}</td></tr>
+      {{ end }}
+      </tbody>
+    </table>
+    {{ else }}
+      <div class="muted">No port data.</div>
+    {{ end }}
+
+    <h2>Scans</h2>
+    {{ range .Scans }}
+      <section style="margin-bottom:18px">
+        <h3>{{ .IP }} {{ if .MAC }}<span class="muted">(MAC: {{ .MAC }})</span>{{ end }} <span class="muted">(scan id: {{ .ID }})</span></h3>
+        <div class="muted small">Started: {{ .Started }} — Finished: {{ .Finished }} — Type: {{ .ScanType }} — Open ports: {{ .OpenCount }}</div>
+        {{ if .Ports }}
+        <table>
+          <thead><tr><th>Port</th><th>Proto</th><th>State</th><th>Service</th><th>Product / Version</th><th>NSE Scripts</th></tr></thead>
+          <tbody>
+            {{ range .Ports }}
+              <tr>
+                <td class="{{ if eq .State "open" }}port-open{{ else }}port-closed{{ end }}">{{ .Port }}</td>
+                <td>{{ .Proto }}</td>
+                <td>{{ .State }}</td>
+                <td>{{ .Service }}</td>
+                <td>{{ .Product }} {{ .Version }}</td>
+                <td>
+                  {{ if .Scripts }}
+                    {{ range .Scripts }}
+                      <div class="small"><strong>{{ .ID }}</strong>: {{ .Output }}</div>
+                    {{ end }}
+                  {{ else }}
+                    <span class="muted">—</span>
+                  {{ end }}
+                </td>
+              </tr>
+            {{ end }}
+          </tbody>
+        </table>
+        {{ end }}
+        {{ if .RawResult }}
+          <h4>Raw XML excerpt</h4>
+          <pre>{{ .RawResult }}</pre>
+        {{ end }}
+      </section>
+    {{ end }}
+
+    <footer class="muted small">Generated by Private Network Reporter</footer>
+  </div>
+</body>
+</html>

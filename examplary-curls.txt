@@ -1,0 +1,185 @@
+# ============================================
+# Private Network Reporter - API Test Commands
+# ============================================
+# Replace ADMIN_TOKEN and EVENT_SECRET with actual values
+# For local testing use http://127.0.0.1:8080
+# For RouterOS testing use https://192.168.88.1:8080 with -k flag
+# ============================================
+
+export ADMIN_TOKEN="<your-admin-token-base64-32-bytes>"
+export EVENT_SECRET="<your-event-secret-base64-32-bytes>"
+export BASE_URL="https://<your-pnr-host>:8080"
+
+# ============================================
+# PUBLIC ENDPOINTS (no auth required)
+# ============================================
+
+# Health check - returns service status
+curl -k "$BASE_URL/healthz"
+
+# ============================================
+# WEBHOOK ENDPOINTS (require SHA512 signature)
+# ============================================
+
+# /events - Single host discovery event (from DHCP/Netwatch)
+# Note: In production, RouterOS calculates signature automatically
+# For testing without signature (if EVENT_TOKEN is empty):
+curl -k -X POST "$BASE_URL/events" \
+  -H "Content-Type: application/json" \
+  -d '{"ip":"192.168.88.100","mac":"AA:BB:CC:DD:EE:FF","source":"routeros"}'
+
+# /arp/harvest - Bulk ARP import (from arp-ingest-batcher)
+# Note: In production, RouterOS calculates signature automatically
+curl -k -X POST "$BASE_URL/arp/harvest" \
+  -H "Content-Type: application/json" \
+  -d '[{"ip":"192.168.88.100","mac":"AA:BB:CC:DD:EE:FF"},{"ip":"192.168.88.101","mac":"11:22:33:44:55:66"}]'
+
+# ============================================
+# ADMIN ENDPOINTS (require X-Admin-Token header)
+# ============================================
+
+# --- Health & Status ---
+
+# Admin health check (same as /healthz but requires auth)
+curl -k "$BASE_URL/admin/health" \
+  -H "X-Admin-Token: $ADMIN_TOKEN"
+
+# --- Scanning Control ---
+
+# Toggle scanning on/off
+curl -k -X POST "$BASE_URL/admin/toggle" \
+  -H "X-Admin-Token: $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"enabled":true}'
+
+curl -k -X POST "$BASE_URL/admin/toggle" \
+  -H "X-Admin-Token: $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"enabled":false}'
+
+# --- Configuration ---
+
+# Get current config
+curl -k "$BASE_URL/admin/config" \
+  -H "X-Admin-Token: $ADMIN_TOKEN"
+
+# Update runtime config (without restart)
+curl -k -X POST "$BASE_URL/admin/config" \
+  -H "X-Admin-Token: $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"cooldown":"15m","daily_report_time":"22:30","report_detail":"detailed","max_workers":4}'
+
+# Update only cooldown
+curl -k -X POST "$BASE_URL/admin/config" \
+  -H "X-Admin-Token: $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"cooldown":"30m"}'
+
+# Update only report settings
+curl -k -X POST "$BASE_URL/admin/config" \
+  -H "X-Admin-Token: $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"daily_report_time":"08:00","report_detail":"summary"}'
+
+# Update scan timeouts (timeout_basic: 10s-10m, timeout_deep: 30s-30m)
+curl -k -X POST "$BASE_URL/admin/config" \
+  -H "X-Admin-Token: $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"timeout_basic":"90s","timeout_deep":"5m"}'
+
+# --- Scanning Operations ---
+
+# Queue IP for scanning (async, uses worker pool)
+curl -k "$BASE_URL/admin/rescan?ip=192.168.88.254" \
+  -H "X-Admin-Token: $ADMIN_TOKEN"
+
+# Immediate scan - basic (default, uses AUTO_SCAN_LEVEL from config)
+curl -k "$BASE_URL/admin/scan?ip=192.168.88.200" \
+  -H "X-Admin-Token: $ADMIN_TOKEN"
+
+# Immediate scan - with custom ports
+curl -k "$BASE_URL/admin/scan?ip=192.168.88.200&ports=22,80,443,8080,3306" \
+  -H "X-Admin-Token: $ADMIN_TOKEN"
+
+# Immediate scan - deep (NSE scripts, ~5 min timeout)
+curl -k "$BASE_URL/admin/scan?ip=192.168.88.200&deep=1" \
+  -H "X-Admin-Token: $ADMIN_TOKEN"
+
+# Immediate scan - deepsafe (safe NSE scripts only)
+curl -k "$BASE_URL/admin/scan?ip=192.168.88.200&deepsafe=1" \
+  -H "X-Admin-Token: $ADMIN_TOKEN"
+
+# Immediate scan - custom (with specific NSE scripts)
+curl -k "$BASE_URL/admin/scan?ip=192.168.88.200&custom=1&scripts=http-title,ssh-hostkey" \
+  -H "X-Admin-Token: $ADMIN_TOKEN"
+
+# Immediate scan - custom with vulners script (vulnerability detection)
+curl -k "$BASE_URL/admin/scan?ip=192.168.88.200&custom=1&scripts=vulners&timeout=10m" \
+  -H "X-Admin-Token: $ADMIN_TOKEN"
+
+# Immediate scan - custom using CUSTOM_SCRIPTS from env (no scripts param needed)
+curl -k "$BASE_URL/admin/scan?ip=192.168.88.200&custom=1" \
+  -H "X-Admin-Token: $ADMIN_TOKEN"
+
+# Immediate scan - raw mode (uses -sS SYN scan, requires root/capabilities)
+curl -k "$BASE_URL/admin/scan?ip=192.168.88.200&mode=raw" \
+  -H "X-Admin-Token: $ADMIN_TOKEN"
+
+# Immediate scan - all options combined
+curl -k "$BASE_URL/admin/scan?ip=192.168.88.200&deep=1&mode=raw&ports=1-1000" \
+  -H "X-Admin-Token: $ADMIN_TOKEN"
+
+# Immediate scan - with custom timeout (overrides default for scan type)
+curl -k "$BASE_URL/admin/scan?ip=192.168.88.200&timeout=3m" \
+  -H "X-Admin-Token: $ADMIN_TOKEN"
+
+# Immediate scan - deep with extended timeout for many ports
+curl -k "$BASE_URL/admin/scan?ip=192.168.88.200&custom=1&scripts=vuln&ports=1-10000&timeout=30m" \
+  -H "X-Admin-Token: $ADMIN_TOKEN"
+
+# --- Database Maintenance ---
+
+# Repair/optimize database (VACUUM + ANALYZE)
+curl -k -X POST "$BASE_URL/admin/repair" \
+  -H "X-Admin-Token: $ADMIN_TOKEN"
+
+# --- Reports ---
+
+# Get latest report (HTML)
+curl -k "$BASE_URL/admin/report/today" \
+  -H "X-Admin-Token: $ADMIN_TOKEN"
+
+# Generate new report (async, last 24h by default)
+curl -k -X POST "$BASE_URL/admin/report/generate" \
+  -H "X-Admin-Token: $ADMIN_TOKEN"
+
+# Generate report for custom time range (RFC3339 format, + must be URL-encoded as %2B)
+curl -k -X POST "$BASE_URL/admin/report/generate?from=2025-12-04T17:12:16%2B01:00&to=2025-12-05T17:12:16%2B01:00" \
+  -H "X-Admin-Token: $ADMIN_TOKEN"
+
+# Generate report for custom time range (Unix timestamp)
+curl -k -X POST "$BASE_URL/admin/report/generate?from=1733011200&to=1733097600" \
+  -H "X-Admin-Token: $ADMIN_TOKEN"
+
+# ============================================
+# RESPONSE EXAMPLES
+# ============================================
+
+# /healthz response:
+# {"ok":true,"enabled":true,"max_workers":2,"cooldown":"10m0s","report_time":"06:00","report_detail":"detailed"}
+
+# /events response (success):
+# HTTP 202 (no body)
+
+# /events response (cooldown active):
+# {"status":"queued","note":"cooldown active, scan deferred"}
+
+# /arp/harvest response:
+# {"harvested":23,"queued":15,"skipped_cooldown":8}
+
+# /admin/scan response:
+# {"ip":"192.168.88.200","scan_id":42,"result":{...nmap output...},"duration":"12.5s"}
+
+# /admin/report/generate response:
+# Returns HTML report directly (Content-Type: text/html)
+# Report is saved to /data/reports/report_<from>_<to>.html

@@ -1,0 +1,64 @@
+---
+config:
+  theme: neutral
+---
+flowchart LR
+ subgraph HOSTS["Hosty LAN"]
+        H["Hosty"]
+        A["Admin"]
+  end
+ subgraph EV["Zdarzenia źródłowe"]
+        DHCP["Serwer DHCP"]
+        NETW["Netwatch"]
+        ARP["Tablica ARP"]
+  end
+ subgraph NMAPD["Private Network Reporter (PNR)"]
+      subgraph API["HTTPS API"]
+            HOOK["Webhook /events (X-Auth-Signature)"]
+            ADM["/admin/* (Admin API, Token)"]
+            REP["Webhook /arp/harvest (X-Auth-Signature)"]
+      end
+        WORKERS["Worker Pool"]
+        ARPING["ARP Ingester*"]
+        DB[("SQLite<br>endpoints, scans, ports")]
+        REPORT["Reporter<br>(HTML + SMTP)"]
+        CFG["Config Runtime<br>(ENV + /admin/config)"]
+        NMAP["Moduł skaner<br>(Nmap + parser XML)"]
+  end
+ subgraph ROS["RouterOS"]
+        EV
+        subgraph FETCH["Skrypty RouterOS"]
+            HARVESTER["send-arp-batch"]
+            CREATOR["arp-ingest-batcher"]
+            DISCOVERER["pnr-event-on-discover"]
+            end
+        NMAPD
+  end
+ subgraph LAN["LAN"]
+        HOSTS
+        ROS
+  end
+  SMTP["SMTP Server"]
+    ADM -. "zmiana Config Runtime" .-> CFG
+    A -- "Admin API" --> ADM
+    ADM -. "natychmiastowy skan konkretnego hosta (/admin/scan)" .-> NMAP 
+    EV -- "DHCP Lease/Netwatch/nowe wpisy Tablica ARP" --> FETCH
+    DISCOVERER -- "POST /events JSON + X-Auth-Signature + X-Auth-Timestamp" --> HOOK
+    HOOK -- "UPSERT endpoint (discovery)" --> DB
+    HOOK -- "enqueue IP" --> WORKERS
+    HARVESTER -- "POST /arp/harvest bulk [{ip,mac}...] X-Auth-Signature + X-Auth-Timestamp" --> REP
+    REP -- "bulk UPSERT endpoint (discovery)" --> DB
+    REP -- "enqueue IPs" --> WORKERS
+    ARPING -- "bulk UPSERT endpoint (discovery)" --> DB
+    ARPING -- "enqueue IPs" --> WORKERS
+    ADM -. "VACUUM + ANALYZE (/admin/repair)" .-> DB
+    ADM -. "enqueue IP (/admin/rescan)" .-> WORKERS
+    WORKERS -- "wywołanie modułu" --> NMAP
+    NMAP -- "skan hostów" --> HOSTS
+    HOSTS -- "wynik XML" --> NMAP
+    NMAP -- "zapis danych ze skanów" --> DB
+    REPORT -- "pobranie danych" --> DB
+    REPORT -. "HTML email" .-> SMTP
+    SMTP -. "przesłanie raportu" .-> A
+    ADM -. "generowanie raportu" .-> REPORT
+    CREATOR -- "przygotowanie JSON" --> HARVESTER

@@ -1,0 +1,114 @@
+---
+config:
+  theme: neutral
+---
+sequenceDiagram
+    autonumber
+    participant Admin
+    participant Hosty
+    participant RouterOS
+    participant API as HTTPS API
+    participant W as Workery
+    participant NMAP as Skaner
+    participant DB as SQLite
+    participant REP as Reporter
+    participant SMTP as SMTP Serwer
+    
+    rect rgb(240,240,240)
+    note over Hosty,RouterOS: 1. Wykrywanie hostów w sieci
+    Hosty->>RouterOS: Aktywność sieciowa (ARP/DHCP)
+    RouterOS->>API: Zdarzenie sieciowe (webhook)
+    API->>DB: Zapisz informacje o hoście
+    API->>DB: Sprawdź czas ostatniego skanu
+    alt Cooldown aktywny
+        API->>API: Pomiń (zbyt wcześnie)
+    else Cooldown minął
+        API->>W: Dodaj do kolejki skanów
+    end
+    end
+    
+    rect rgb(240,240,240)
+    note over W,NMAP: 2. Automatyczne skanowanie
+    W->>W: Pobierz adres IP z kolejki
+    W->>DB: Sprawdź czas ostatniego skanu
+    alt Cooldown aktywny
+        W->>W: Pomiń (zbyt wcześnie)
+    else Cooldown minął
+        alt Skan w toku (Sync.map)
+            W->>W: Pomiń (już skanowany)
+        else Można skanować
+            W->>NMAP: Zlecenie skanu
+        NMAP->>Hosty: Skanowanie portów i usług
+        NMAP->>W: Wynik skanu
+            W->>DB: Zapisz wyniki skanu
+        end
+    end
+    end
+    
+    rect rgb(240,240,240)
+    note over REP,SMTP: 3. Raportowanie (codziennie)
+    REP->>REP: Oczekiwanie na godzinę raportu
+    REP->>DB: Pobierz wyniki skanów z okresu
+    REP->>REP: Wykryj wrażliwe informacje
+    REP->>REP: Wygeneruj raport HTML
+    REP->>REP: Zapisz raport do pliku
+    alt SMTP skonfigurowany
+        REP->>SMTP: Połączenie z serwerem
+        REP->>SMTP: Uwierzytelnienie
+        REP->>SMTP: Wysłanie raportu emailem
+    end
+    end
+    
+    rect rgb(240,240,240)
+    note over Admin,API: 4. Skan manualny (natychmiastowy)
+    Admin->>API: Żądanie skanu wybranego hosta
+    API->>API: Pomiń cooldown i kolejkę
+    API->>NMAP: Zlecenie skanu
+    NMAP->>Hosty: Skanowanie portów i usług
+    NMAP->>API: Wynik skanu
+    API->>DB: Zapisz wynik skanu
+    alt Wykryto wrażliwe dane
+        API-->>Admin: Wynik + ostrzeżenie
+    else Standardowy wynik
+        API-->>Admin: Wynik skanu
+    end
+    end
+    
+    rect rgb(240,240,240)
+    note over Admin,W: 5. Ponowny skan (przez kolejkę)
+    Admin->>API: Żądanie ponownego skanu
+    API->>W: Dodaj do kolejki
+    API-->>Admin: Potwierdzenie dodania
+    note right of API: Worker przeprowadzi skan zgodnie z kolejką
+    end
+    
+    rect rgb(240,240,240)
+    note over Admin,REP: 6. Operacje administracyjne
+    Admin->>API: Pauza/wznowienie workerów
+    API-->>Admin: Potwierdzenie
+    
+    Admin->>API: Odczyt konfiguracji
+    API-->>Admin: Aktualna konfiguracja
+    
+    Admin->>API: Zmiana konfiguracji
+    API-->>Admin: Potwierdzenie zmiany
+    
+    Admin->>API: Optymalizacja bazy danych
+    API->>DB: Optymalizacja i czyszczenie
+    API-->>Admin: Potwierdzenie
+    
+    Admin->>API: Pobranie ostatniego raportu
+    API->>API: Wyszukaj najnowszy raport
+    API-->>Admin: Raport HTML
+    
+    Admin->>API: Generowanie raportu na żądanie
+    API->>REP: Zlecenie generowania
+    REP->>DB: Pobierz dane skanów
+    REP->>REP: Wygeneruj raport HTML
+    REP->>REP: Zapisz raport
+    REP->>SMTP: Wyślij emailem (opcjonalnie)
+    API-->>Admin: Raport HTML
+
+    Admin->>API: Sprawdzenie statusu systemu
+    API-->>Admin: Status i parametry pracy
+    end
