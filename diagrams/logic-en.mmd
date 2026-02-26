@@ -1,0 +1,64 @@
+---
+config:
+  theme: neutral
+---
+flowchart LR
+ subgraph HOSTS["LAN Hosts"]
+        H["Hosts"]
+        A["Admin"]
+  end
+ subgraph EV["Source Events"]
+        DHCP["DHCP Server"]
+        NETW["Netwatch"]
+        ARP["ARP Table"]
+  end
+ subgraph NMAPD["Private Network Reporter (PNR)"]
+      subgraph API["HTTPS API"]
+            HOOK["Webhook /events (X-Auth-Signature)"]
+            ADM["/admin/* (Admin API, Token)"]
+            REP["Webhook /arp/harvest (X-Auth-Signature)"]
+      end
+        WORKERS["Worker Pool"]
+        ARPING["ARP Ingester*"]
+        DB[("SQLite<br>endpoints, scans, ports")]
+        REPORT["Reporter<br>(HTML + SMTP)"]
+        CFG["Config Runtime<br>(ENV + /admin/config)"]
+        NMAP["Scanner Module<br>(Nmap + XML parser)"]
+  end
+ subgraph ROS["RouterOS"]
+        EV
+        subgraph FETCH["RouterOS Scripts"]
+            HARVESTER["send-arp-batch"]
+            CREATOR["arp-ingest-batcher"]
+            DISCOVERER["pnr-event-on-discover"]
+            end
+        NMAPD
+  end
+ subgraph LAN["LAN"]
+        HOSTS
+        ROS
+  end
+  SMTP["SMTP Server"]
+    ADM -. "Config Runtime change" .-> CFG
+    A -- "Admin API" --> ADM
+    ADM -. "immediate scan of specific host (/admin/scan)" .-> NMAP 
+    EV -- "DHCP Lease/Netwatch/new ARP Table entries" --> FETCH
+    DISCOVERER -- "POST /events JSON + X-Auth-Signature + X-Auth-Timestamp" --> HOOK
+    HOOK -- "UPSERT endpoint (discovery)" --> DB
+    HOOK -- "enqueue IP" --> WORKERS
+    HARVESTER -- "POST /arp/harvest bulk [{ip,mac}...] X-Auth-Signature + X-Auth-Timestamp" --> REP
+    REP -- "bulk UPSERT endpoint (discovery)" --> DB
+    REP -- "enqueue IPs" --> WORKERS
+    ARPING -- "bulk UPSERT endpoint (discovery)" --> DB
+    ARPING -- "enqueue IPs" --> WORKERS
+    ADM -. "VACUUM + ANALYZE (/admin/repair)" .-> DB
+    ADM -. "enqueue IP (/admin/rescan)" .-> WORKERS
+    WORKERS -- "module invocation" --> NMAP
+    NMAP -- "host scanning" --> HOSTS
+    HOSTS -- "XML result" --> NMAP
+    NMAP -- "scan data storage" --> DB
+    REPORT -- "data retrieval" --> DB
+    REPORT -. "HTML email" .-> SMTP
+    SMTP -. "report delivery" .-> A
+    ADM -. "report generation" .-> REPORT
+    CREATOR -- "JSON preparation" --> HARVESTER

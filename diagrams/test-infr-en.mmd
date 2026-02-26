@@ -1,0 +1,52 @@
+---
+config:
+  theme: neutral
+  layout: elk
+---
+flowchart LR
+  subgraph HOST[Local Computer]
+    VB[["VirtualBox Host-Only vSwitch (L2)"]]
+    H0[eth_n0: real LAN]
+    H1[eth_n1: host-only]
+  end
+  subgraph VMS[Test Machines]
+      UB_NAT[Ubuntu: eth0 NAT]
+      UB_REAL[Ubuntu: eth1 real LAN]
+      UB_FAKE[Ubuntu: eth2 fakeLAN]
+      KIP_FAKE[Kioptrix: eth0 fakeLAN]
+    end
+  subgraph CHR[VM: MikroTik CHR]
+    CHR_NAT[eth0 NAT]
+    CHR_FAKE[eth1 fakeLAN]
+    CHR_REAL[eth2 real LAN]
+    BR_LAN[[bridge-lan<br>GW 192.168.88.1/24]]
+    BR_CNT[[bridge-containers<br>GW 172.17.0.1/24]]
+    subgraph CNT[Containers]
+      VETH1[pnr: veth1 172.17.0.2/24]
+    end
+  end
+  ROUTER[["Local Router (gateway 192.168.0.1)"]]
+
+  NET[(Internet)]
+
+  %% L2 host-only (fakeLAN)
+  VB --- H1
+  VB --- UB_FAKE
+  VB --- KIP_FAKE
+  VB --- CHR_FAKE
+
+  %% realLAN
+  H0 --- ROUTER
+  ROUTER --- CHR_REAL
+  ROUTER --- UB_REAL
+
+  %% bridges & containers
+  CHR_FAKE --- BR_LAN
+  CHR_REAL --- BR_LAN
+  BR_CNT --- VETH1
+
+  %% NAT / routing (dashed)
+  BR_LAN -.-> CHR_NAT
+  BR_CNT -.-> CHR_NAT
+  CHR_NAT -.-> NET
+  BR_LAN <--"NAT port-forwarding (dst-nat)<br>NAT translation to local network address (src-nat)"--> VETH1

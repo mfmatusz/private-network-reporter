@@ -1,0 +1,114 @@
+---
+config:
+  theme: neutral
+---
+sequenceDiagram
+    autonumber
+    participant Admin
+    participant Hosts
+    participant RouterOS
+    participant API as HTTPS API
+    participant W as Workers
+    participant NMAP as Scanner
+    participant DB as SQLite
+    participant REP as Reporter
+    participant SMTP as SMTP Server
+    
+    rect rgb(240,240,240)
+    note over Hosts,RouterOS: 1. Host discovery in the network
+    Hosts->>RouterOS: Network activity (ARP/DHCP)
+    RouterOS->>API: Network event (webhook)
+    API->>DB: Save host information
+    API->>DB: Check last scan time
+    alt Cooldown active
+        API->>API: Skip (too early)
+    else Cooldown elapsed
+        API->>W: Add to scan queue
+    end
+    end
+    
+    rect rgb(240,240,240)
+    note over W,NMAP: 2. Automatic scanning
+    W->>W: Fetch IP from queue
+    W->>DB: Check last scan time
+    alt Cooldown active
+        W->>W: Skip (too early)
+    else Cooldown elapsed
+        alt Scan in progress (Sync.map)
+            W->>W: Skip (already being scanned)
+        else Can scan
+            W->>NMAP: Scan request
+        NMAP->>Hosts: Scanning ports and services
+        NMAP->>W: Scan result
+            W->>DB: Save scan results
+        end
+    end
+    end
+    
+    rect rgb(240,240,240)
+    note over REP,SMTP: 3. Reporting (daily)
+    REP->>REP: Waiting for report time
+    REP->>DB: Fetch scan results for period
+    REP->>REP: Detect sensitive information
+    REP->>REP: Generate HTML report
+    REP->>REP: Save report to file
+    alt SMTP configured
+        REP->>SMTP: Connect to server
+        REP->>SMTP: Authentication
+        REP->>SMTP: Send report by email
+    end
+    end
+    
+    rect rgb(240,240,240)
+    note over Admin,API: 4. Manual scan (immediate)
+    Admin->>API: Scan request for selected host
+    API->>API: Skip cooldown and queue
+    API->>NMAP: Scan request
+    NMAP->>Hosts: Scanning ports and services
+    NMAP->>API: Scan result
+    API->>DB: Save scan result
+    alt Sensitive data detected
+        API-->>Admin: Result + warning
+    else Standard result
+        API-->>Admin: Scan result
+    end
+    end
+    
+    rect rgb(240,240,240)
+    note over Admin,W: 5. Rescan (via queue)
+    Admin->>API: Rescan request
+    API->>W: Add to queue
+    API-->>Admin: Addition confirmed
+    note right of API: Worker will perform scan according to queue
+    end
+    
+    rect rgb(240,240,240)
+    note over Admin,REP: 6. Administrative operations
+    Admin->>API: Pause/resume workers
+    API-->>Admin: Confirmation
+    
+    Admin->>API: Read configuration
+    API-->>Admin: Current configuration
+    
+    Admin->>API: Configuration change
+    API-->>Admin: Change confirmed
+    
+    Admin->>API: Database optimization
+    API->>DB: Optimization and cleanup
+    API-->>Admin: Confirmation
+    
+    Admin->>API: Fetch latest report
+    API->>API: Find latest report
+    API-->>Admin: HTML report
+    
+    Admin->>API: On-demand report generation
+    API->>REP: Generation request
+    REP->>DB: Fetch scan data
+    REP->>REP: Generate HTML report
+    REP->>REP: Save report
+    REP->>SMTP: Send by email (optional)
+    API-->>Admin: HTML report
+
+    Admin->>API: System status check
+    API-->>Admin: Status and operating parameters
+    end
